@@ -35,7 +35,8 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-
+#define PWM_MAX 999
+#define PWM_MIN 0
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -53,6 +54,7 @@ typedef enum{
   MODE_ON,
   MODE_BLINK,
   MODE_BLINK_FADE,
+  MODE_ADC
 } LedMode_t;
 
 LedMode_t led_mode = MODE_OFF;
@@ -65,6 +67,10 @@ uint8_t toggle_state = 0;
 int16_t pwm_duty = 0;
 int8_t fade_step = 20;
 uint32_t last_fade_tick = 0;
+
+/* ADC mode variables */
+int16_t adc_value = 0;
+uint16_t pwm_duty_percent = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -80,6 +86,7 @@ int _write(int file, char *ptr, int len)
   HAL_UART_Transmit(&huart2, (uint8_t *)ptr, len, 0xFFFF);
   return len;
 }
+
 /* USER CODE END 0 */
 
 /**
@@ -89,131 +96,146 @@ int _write(int file, char *ptr, int len)
 int main(void)
 {
 
+  /* USER CODE BEGIN 1 */
 
-	  /* USER CODE BEGIN 1 */
+  /* USER CODE END 1 */
 
-	  /* USER CODE END 1 */
+  /* MCU Configuration--------------------------------------------------------*/
 
-	  /* MCU Configuration--------------------------------------------------------*/
+  /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
+  HAL_Init();
 
-	  /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
-	  HAL_Init();
+  /* USER CODE BEGIN Init */
 
-	  /* USER CODE BEGIN Init */
+  /* USER CODE END Init */
 
-	  /* USER CODE END Init */
+  /* Configure the system clock */
+  SystemClock_Config();
 
-	  /* Configure the system clock */
-	  SystemClock_Config();
+  /* USER CODE BEGIN SysInit */
 
-	  /* USER CODE BEGIN SysInit */
+  /* USER CODE END SysInit */
 
-	  /* USER CODE END SysInit */
+  /* Initialize all configured peripherals */
+  MX_GPIO_Init();
+  MX_ADC1_Init();
+  MX_TIM2_Init();
+  MX_USART2_UART_Init();
+  /* USER CODE BEGIN 2 */
+  /* Start PWM on Channel 1 (PA5 - onboard LED) */
+  HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
 
-	  /* Initialize all configured peripherals */
-	  MX_GPIO_Init();
-	  MX_ADC1_Init();
-	  MX_TIM2_Init();
-	  MX_USART2_UART_Init();
-	  /* USER CODE BEGIN 2 */
-	  /* Start PWM on Channel 1 (PA5 - onboard LED) */
-	  HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
+  /* Send startup message to terminal */
+  uint8_t msg[] = "STM32 Ready. Commands: o=On, x=Off, b=Blink, f=Fade\r\n";
+  HAL_UART_Transmit(&huart2, msg, sizeof(msg) - 1, 100);
+  /* USER CODE END 2 */
 
-	  /* Send startup message to terminal */
-	  uint8_t msg[] = "STM32 Ready. Commands: o=On, x=Off, b=Blink, f=Fade\r\n";
-	  HAL_UART_Transmit(&huart2, msg, sizeof(msg) - 1, 100);
-	  /* USER CODE END 2 */
+  /* Infinite loop */
+  /* USER CODE BEGIN WHILE */
+  while (1)
+  {
+	  /* -------------------- RECEIVE (Polling, Non-Blocking) -------------------- */
+	 /* timeout = 0 means: check once, return immediately if no data */
+	 if (HAL_UART_Receive(&huart2, &rx_char, 1, 0) == HAL_OK)
+	 {
+     printf("Received: %c\r\n", rx_char);
 
-	  /* Infinite loop */
-	  /* USER CODE BEGIN WHILE */
-	  while (1)
-	  {
-		  /* -------------------- RECEIVE (Polling, Non-Blocking) -------------------- */
-		 /* timeout = 0 means: check once, return immediately if no data */
-		 if (HAL_UART_Receive(&huart2, &rx_char, 1, 0) == HAL_OK)
+		 switch (rx_char)
 		 {
-	     printf("Received: %c\r\n", rx_char);
+			 case 'o':
+				 led_mode = MODE_ON;
+				 break;
 
-			 switch (rx_char)
+			 case 'x':
+				 led_mode = MODE_OFF;
+				 break;
+
+			 case 'b':
+				 led_mode = MODE_BLINK;
+				 last_toggle_tick = HAL_GetTick();//A
+				 toggle_state = 0;
+				 break;
+
+			 case 'f':
+				 led_mode = MODE_BLINK_FADE;
+				 pwm_duty = 0;
+				 fade_step = fade_step;
+				 last_fade_tick = HAL_GetTick();
+				 break;
+
+      case 'a':
+         led_mode = MODE_ADC;
+         break;
+
+			 default:
+				 printf("Unknown command: %c\r\n", rx_char);
+				 break;
+		 }
+	 }
+
+	 /* -------------------- ACTION (Switch-Case on Mode) -------------------- */
+	 switch (led_mode)
+	 {
+		 case MODE_ON:
+			 /* 100% duty cycle = LED fully ON */
+			 __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, PWM_MAX);
+			 break;
+
+		 case MODE_OFF:
+			 /* 0% duty cycle = LED fully OFF */
+			 __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, PWM_MIN);
+			 break;
+
+		 case MODE_BLINK:
+			 /* Toggle between ON and OFF every 500 ms */
+			 if ((HAL_GetTick() - last_toggle_tick) >= 500)
 			 {
-				 case 'o':
-					 led_mode = MODE_ON;
-					 break;
-
-				 case 'x':
-					 led_mode = MODE_OFF;
-					 break;
-
-				 case 'b':
-					 led_mode = MODE_BLINK;
-					 last_toggle_tick = HAL_GetTick();
-					 toggle_state = 0;
-					 break;
-
-				 case 'f':
-					 led_mode = MODE_BLINK_FADE;
-					 pwm_duty = 0;
-					 fade_step = fade_step;
-					 last_fade_tick = HAL_GetTick();
-					 break;
-
-				 default:
-					 printf("Unknown command: %c\r\n", rx_char);
-					 break;
+				 toggle_state = !toggle_state;
+				 __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, toggle_state ? PWM_MAX : PWM_MIN);
+				 last_toggle_tick = HAL_GetTick();
 			 }
-		 }
+			 break;
 
-		 /* -------------------- ACTION (Switch-Case on Mode) -------------------- */
-		 switch (led_mode)
-		 {
-			 case MODE_ON:
-				 /* 100% duty cycle = LED fully ON */
-				 __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, 999);
-				 break;
+		 case MODE_BLINK_FADE:
+			 /* Fade LED in/out (breathing effect) using PWM */
+			 if ((HAL_GetTick() - last_fade_tick) >= 20)  /* update every 20 ms */
+			 {
+				 pwm_duty += fade_step;
 
-			 case MODE_OFF:
-				 /* 0% duty cycle = LED fully OFF */
-				 __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, 0);
-				 break;
-
-			 case MODE_BLINK:
-				 /* Toggle between ON and OFF every 500 ms */
-				 if ((HAL_GetTick() - last_toggle_tick) >= 500)
+				 if (pwm_duty >= PWM_MAX)
 				 {
-					 toggle_state = !toggle_state;
-					 __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, toggle_state ? 999 : 0);
-					 last_toggle_tick = HAL_GetTick();
+					 //pwm_duty = PWM_MAX;
+					 fade_step = -fade_step;   /* reverse direction: fade down */
 				 }
-				 break;
-
-			 case MODE_BLINK_FADE:
-				 /* Fade LED in/out (breathing effect) using PWM */
-				 if ((HAL_GetTick() - last_fade_tick) >= 20)  /* update every 20 ms */
+				 else if (pwm_duty <= PWM_MIN)
 				 {
-					 pwm_duty += fade_step;
-
-					 if (pwm_duty >= 999)
-					 {
-						 //pwm_duty = 999;
-						 fade_step = -fade_step;   /* reverse direction: fade down */
-					 }
-					 else if (pwm_duty <= 0)
-					 {
-						 //pwm_duty = 1;
-						 fade_step = -fade_step;    /* reverse direction: fade up */
-					 }
-
-					 __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, pwm_duty);
-					 last_fade_tick = HAL_GetTick();
+					 //pwm_duty = 1;
+					 fade_step = -fade_step;    /* reverse direction: fade up */
 				 }
-				 break;
-		 }
-	    /* USER CODE END WHILE */
 
-	    /* USER CODE BEGIN 3 */
-	  }
-	  /* USER CODE END 3 */
-	}
+				 if(pwm_duty>PWM_MAX)
+					 pwm_duty = PWM_MAX;
+				 else if(pwm_duty<PWM_MIN)
+					 pwm_duty = PWM_MIN;
+
+				 __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, pwm_duty);
+				 last_fade_tick = HAL_GetTick();
+			 }
+			 break;
+
+       case MODE_ADC:
+      adc_value = Read_ADC_Channel(ADC_CHANNEL_0);
+      pwm_duty = (adc_value * PWM_MAX) / 4095;
+       __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, pwm_duty);
+       pwm_duty_percent = pwm_duty/10;
+       break;
+	 };
+    /* USER CODE END WHILE */
+
+    /* USER CODE BEGIN 3 */
+  }
+  /* USER CODE END 3 */
+}
 
 /**
   * @brief System Clock Configuration

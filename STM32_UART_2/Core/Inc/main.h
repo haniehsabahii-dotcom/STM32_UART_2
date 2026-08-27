@@ -41,7 +41,7 @@ extern "C" {
 
 /* Exported constants --------------------------------------------------------*/
 /* USER CODE BEGIN EC */
-
+uint32_t Read_ADC_Channel(uint32_t channel);
 /* USER CODE END EC */
 
 /* Exported macro ------------------------------------------------------------*/
