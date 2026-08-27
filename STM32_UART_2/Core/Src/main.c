@@ -62,7 +62,7 @@ uint32_t last_toggle_tick = 0;
 uint8_t toggle_state = 0;
 
 /* Blink (fade) mode variables */
-uint16_t pwm_duty = 0;
+int16_t pwm_duty = 0;
 int8_t fade_step = 20;
 uint32_t last_fade_tick = 0;
 /* USER CODE END PV */
@@ -200,7 +200,7 @@ int main(void)
 					 else if (pwm_duty <= 0)
 					 {
 						 //pwm_duty = 1;
-						 fade_step = fade_step;    /* reverse direction: fade up */
+						 fade_step = -fade_step;    /* reverse direction: fade up */
 					 }
 
 					 __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, pwm_duty);
